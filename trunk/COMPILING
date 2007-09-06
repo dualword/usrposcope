@@ -1,4 +1,4 @@
 
-You'll need QT 4.2 or greater to compile.  Type "qmake" to generate a Makefile, then "make" to generate the program.  This should create an Oscilloscope executable which you can then run after attaching your USRP.
+You'll need QT 4.2 or greater, libusrp, and libfftw3 to compile and run.  Type "qmake" to generate a Makefile, then "make" to generate the program.  This should create an Oscilloscope executable which you can then run after attaching your USRP.
 
 

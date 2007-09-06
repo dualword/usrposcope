@@ -168,7 +168,7 @@ USRPiface::run()
      p.setPen(QColor(95,95,95)); 
      for (int i = DIVSIZE; i < swidth; i += DIVSIZE)
        {
-	 p.drawLine(i, 0, i, 400);
+	 p.drawLine(i, 0, i, sheight);
 	 p.drawLine(0, i, swidth, i);
        }
 

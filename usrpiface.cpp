@@ -53,6 +53,7 @@ USRPiface::USRPiface(Scope *s)
   showIQ = false;
   showFFT = false;
   showFM = false;
+  antiAlias = true;
   trigger = TRIGGER_I;
   drawPause = false;
 }
@@ -137,194 +138,202 @@ USRPiface::run()
 
   rx->start();
   while (1)
-   {
-     int swidth = scope->width();
-     int sheight = scope->height();
-     increment = trim;  
+    {
+      int swidth = scope->width();
+      int sheight = scope->height();
+      increment = trim;  
 
-     if (state != STATE_NORMAL)
-       {
-	 if (drawPause)
-	   {
-	     drawPause = false;
-             mutex.lock();
-             emit(drawingReady());
-             waitCond.wait(&mutex);	
-	     mutex.unlock();
-	   }
-	 usleep(200);
-	 continue;
-       }
+      if (state != STATE_NORMAL)
+	{
+	  if (drawPause)
+	    {
+	      drawPause = false;
+	      mutex.lock();
+	      emit(drawingReady());
+	      waitCond.wait(&mutex);	
+	      mutex.unlock();
+	    }
+	  usleep(200);
+	  continue;
+	}
 
-     //read data from USRP
-     overrun = true;
-     while(overrun)
-       {
-	 int bytesread = rx->read(buf, BUFSIZE, &overrun);
-	 if (bytesread < BUFSIZE)
-	   { 
-	     cout << "few bytes: " << bytesread << endl; 
-	   }
-       }
+      //read data from USRP
+      overrun = true;
+      while(overrun)
+	{
+	  int bytesread = rx->read(buf, BUFSIZE, &overrun);
+	  if (bytesread < BUFSIZE)
+	    { 
+	      cout << "few bytes: " << bytesread << endl; 
+	    }
+	}
 
-     QPainter p(scope->image);
-     p.setRenderHint(QPainter::Antialiasing, true);
+      QPainter p(scope->image);
+      //draw background
+      p.fillRect(bgrect, QColor(80,80,80));
+      p.setPen(QColor(95,95,95)); 
+      for (int i = DIVSIZE; i < swidth; i += DIVSIZE)
+	{
+	  p.drawLine(i, 0, i, sheight);
+	  p.drawLine(0, i, swidth, i);
+	}
 
-     //draw background
-     p.fillRect(bgrect, QColor(80,80,80));
-     p.setPen(QColor(95,95,95)); 
-     for (int i = DIVSIZE; i < swidth; i += DIVSIZE)
-       {
-	 p.drawLine(i, 0, i, sheight);
-	 p.drawLine(0, i, swidth, i);
-       }
+      if (antiAlias)
+	{
+	  p.setRenderHint(QPainter::Antialiasing, true);
+	}
+      else
+	{
+	  p.setRenderHint(QPainter::Antialiasing, false);
+	}
 
-     //Do triggering
-     short int *data = (short int *) &buf;
-     void *trigdata = (void *) data;
-     int *complexdata = (int *) &complexbuf;
-     int *complextrig = complexdata;
-     if ((trigger & TRIGGER_I) || (trigger & TRIGGER_Q))
-       {
-	 if (trigger & TRIGGER_Q)
-	   data++;
-	 trigdata = (void *) data;
-	 short int lmax = *data;
-	 for (int i = 0; i <= swidth * 2; i++)
-	   {
-	     if (*data > lmax && i < swidth)
-	       {
-		 trigdata = (void *) data;
-		 lmax = *data;
-	       }
-	     data += increment;
-	   }
-       }
 
-     //Make sure we're pointing to I and not Q data
-     trigdata = (void *) (((int) trigdata) & (~0x2));
+      //Do triggering
+      short int *data = (short int *) &buf;
+      void *trigdata = (void *) data;
+      int *complexdata = (int *) &complexbuf;
+      int *complextrig = complexdata;
+      if ((trigger & TRIGGER_I) || (trigger & TRIGGER_Q))
+	{
+	  if (trigger & TRIGGER_Q)
+	    data++;
+	  trigdata = (void *) data;
+	  short int lmax = *data;
+	  for (int i = 0; i <= swidth * 2; i++)
+	    {
+	      if (*data > lmax && i < swidth)
+		{
+		  trigdata = (void *) data;
+		  lmax = *data;
+		}
+	      data += increment;
+	    }
+	}
 
-     //Complex data calculation, and triggering if triggered on IQ channel
-     if ((trigger & TRIGGER_IQ) || showIQ)
-       {
-	 data = (short int *) (((int) trigdata) & (~0x1)); // make sure to start on an I value
-	 int lmax = 0;
-	 for (int i = 0; i <= swidth * 2; i++)
-	   {
-	     int h = (int) sqrt(pow(data[0], 2) + pow(data[1], 2));
-	     complexdata[i] = h;
+      //Make sure we're pointing to I and not Q data
+      trigdata = (void *) (((int) trigdata) & (~0x2));
 
-	     if (h > max) 
-	       {
-		 max = h;
-	       }
+      //Complex data calculation, and triggering if triggered on IQ channel
+      if ((trigger & TRIGGER_IQ) || showIQ)
+	{
+	  data = (short int *) (((int) trigdata) & (~0x1)); // make sure to start on an I value
+	  int lmax = 0;
+	  for (int i = 0; i <= swidth * 2; i++)
+	    {
+	      int h = (int) sqrt(pow(data[0], 2) + pow(data[1], 2));
+	      complexdata[i] = h;
 
-	     if (h > lmax && i < swidth && trigger & TRIGGER_IQ)
-	       {
-		 lmax = h;
-		 trigdata = (void *) data; 
-		 complextrig = complexdata + i;
-	       }
-	     data += increment;
-	   }
-       }
+	      if (h > max) 
+		{
+		  max = h;
+		}
+
+	      if (h > lmax && i < swidth && trigger & TRIGGER_IQ)
+		{
+		  lmax = h;
+		  trigdata = (void *) data; 
+		  complextrig = complexdata + i;
+		}
+	      data += increment;
+	    }
+	}
 
      
-     //FM demodulation
-     if (showFM)
-       {
-	 p.setPen(QColor(10,10,250));
-	 data = (short int *) (((int) trigdata) & (~0x1)); // make sure to start on an I value
-	 double dt = 64000000 / (trim * rx->decim_rate());
-	 double oldI = 1, oldQ = 1;
-	 double oldinstfreq = 0;
-	 double old2 = 0;
-	 double maxNorm = 0;
-	 for (int i = 0; i < swidth * 2; i++)
-	   {
-	     //differentiate arctan(I/Q) (i.e. phase) to get instantaneous frequency
-	     double newI = (double) data[0];
-	     double newQ = (double) data[1];
+      //FM demodulation
+      if (showFM)
+	{
+	  p.setPen(QColor(10,10,250));
+	  data = (short int *) (((int) trigdata) & (~0x1)); // make sure to start on an I value
+	  double dt = 64000000 / (trim * rx->decim_rate());
+	  double oldI = 1, oldQ = 1;
+	  double oldinstfreq = 0;
+	  double old2 = 0;
+	  double maxNorm = 0;
+	  for (int i = 0; i < swidth * 2; i++)
+	    {
+	      //differentiate arctan(I/Q) (i.e. phase) to get instantaneous frequency
+	      double newI = (double) data[0];
+	      double newQ = (double) data[1];
 	     
-	     //normalize amplitude
-	     double norm = sqrt(pow(newI, 2) + pow(newQ, 2));
-	     newI /= norm;
-	     newQ /= norm;
-	     if (norm > maxNorm)
-	       {
-		 maxNorm = norm;
-	       }
+	      //normalize amplitude
+	      double norm = sqrt(pow(newI, 2) + pow(newQ, 2));
+	      newI /= norm;
+	      newQ /= norm;
+	      if (norm > maxNorm)
+		{
+		  maxNorm = norm;
+		}
 
-	     double instantfreq = (newI * ((newQ - oldQ) / dt) - newQ * ((newI - oldI) / dt));
+	      double instantfreq = (newI * ((newQ - oldQ) / dt) - newQ * ((newI - oldI) / dt));
 
-	     oldI = newI;
-	     oldQ = newQ;
-	     data += trim;
-	     p.drawLine(i, (int) (200 + (1000 * maxNorm * oldinstfreq)), i + 1, (int) (200 + (1000 * maxNorm * instantfreq)));
-	     old2 = oldinstfreq;
-	     oldinstfreq = instantfreq;
-	   }
-       }
+	      oldI = newI;
+	      oldQ = newQ;
+	      data += trim;
+	      p.drawLine(i, (int) (200 + (1000 * maxNorm * oldinstfreq)), i + 1, (int) (200 + (1000 * maxNorm * instantfreq)));
+	      old2 = oldinstfreq;
+	      oldinstfreq = instantfreq;
+	    }
+	}
 
 
-     //fft 
-     if (showFFT)
-       {
-	 fftw_complex *in, *out;
-	 fftw_plan plan;
+      //fft 
+      if (showFFT)
+	{
+	  fftw_complex *in, *out;
+	  fftw_plan plan;
 	 
-	 int N = swidth * 2;
+	  int N = swidth * 2;
 	 
-	 in = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * N);
-	 out = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * N);
-	 plan = fftw_plan_dft_1d(N, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+	  in = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * N);
+	  out = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * N);
+	  plan = fftw_plan_dft_1d(N, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
 
-	 data = (short int *) buf;
-	 for (int i = 0; i < N; i++)
-	   {
-	     double *num = (double *) &in[i];
-	     num[0] = (double) data[0];
-	     num[1] = (double) data[1];
-	     data += 2; 
-	   }
+	  data = (short int *) buf;
+	  for (int i = 0; i < N; i++)
+	    {
+	      double *num = (double *) &in[i];
+	      num[0] = (double) data[0];
+	      num[1] = (double) data[1];
+	      data += 2; 
+	    }
 
-	 fftw_execute(plan);
+	  fftw_execute(plan);
 
-	 p.setPen(QColor(250,250,200));
-	 drawSignal(out, &p);
+	  p.setPen(QColor(250,250,200));
+	  drawSignal(out, &p);
 
-	 fftw_destroy_plan(plan);
-	 fftw_free(in);
-	 fftw_free(out);
-       }
+	  fftw_destroy_plan(plan);
+	  fftw_free(in);
+	  fftw_free(out);
+	}
 
 
 
-     //I signal
-     if (showInphase)
-       {
-	 p.setPen(QColor(100,150,200));
-	 drawSignal((short int *) trigdata, &p);
-       }
+      //I signal
+      if (showInphase)
+	{
+	  p.setPen(QColor(100,150,200));
+	  drawSignal((short int *) trigdata, &p);
+	}
 
-     //Q signal
-     data++;
-     if (showQuadrature)
-       {
-	 p.setPen(QColor(250,250,100));
-	 drawSignal(((short int *) trigdata) + 1, &p);
-       }
+      //Q signal
+      data++;
+      if (showQuadrature)
+	{
+	  p.setPen(QColor(250,250,100));
+	  drawSignal(((short int *) trigdata) + 1, &p);
+	}
 
-     //IQ signal
-     if (showIQ)
-       {
-	 p.setPen(QColor(150,250,150));
-	 drawSignal(complextrig, &p);
-       }
+      //IQ signal
+      if (showIQ)
+	{
+	  p.setPen(QColor(150,250,150));
+	  drawSignal(complextrig, &p);
+	}
 	 
-     p.end();
+      p.end();
 
-     if (state == STATE_NORMAL)
+      if (state == STATE_NORMAL)
 	{
           mutex.lock();
           emit(drawingReady());
@@ -332,7 +341,7 @@ USRPiface::run()
 	  mutex.unlock();
 	}
 
-   }
+    }
   rx->stop();
 }
   
@@ -398,6 +407,15 @@ USRPiface::showQuad(int state)
     showQuadrature = true;
   else
     showQuadrature = false;
+}
+
+void
+USRPiface::showAntiAlias(int state)
+{
+  if (state == Qt::Checked)
+    antiAlias = true;
+  else
+    antiAlias = false;
 }
 
 void

@@ -36,6 +36,7 @@ class USRPiface : public QThread
   void showMixed(int state);
   void showSpec(int state);
   void showFreqMod(int state);
+  void showAntiAlias(int state);
   void pauseResume(bool pause);
   void normalize();
   void setTriggerI(bool set);
@@ -55,6 +56,7 @@ class USRPiface : public QThread
   bool showIQ;
   bool showFFT;
   bool showFM;
+  bool antiAlias;
   bool drawPause;
   int trim;
   double timescale;

@@ -53,6 +53,11 @@ int main (int argc, char *argv[])
 
   grid->addWidget(new QLabel(QObject::tr("Display")), 2, 5, 1, 1);
 
+  QCheckBox *doAntiAlias = new QCheckBox(QObject::tr("Antialiased Lines"));
+  doAntiAlias->setChecked(true);
+  grid->addWidget(doAntiAlias, 5, 0, 1, 1);
+  QObject::connect(doAntiAlias, SIGNAL(stateChanged(int)), rp, SLOT(showAntiAlias(int)));
+
   QCheckBox *showInph = new QCheckBox(QObject::tr("I Channel"));
   grid->addWidget(showInph, 3, 5, 1, 1);
   QObject::connect(showInph, SIGNAL(stateChanged(int)), rp, SLOT(showInph(int)));

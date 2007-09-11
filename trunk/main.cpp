@@ -12,7 +12,6 @@
 #include "scope.h"
 #include "usrpiface.h"
 
-
 int main (int argc, char *argv[])
 {
   QApplication *a = new QApplication(argc, argv);
@@ -104,7 +103,7 @@ int main (int argc, char *argv[])
 
   central->setLayout(grid);
 
-  QObject::connect(rp, SIGNAL(drawingReady()), s, SLOT(update()));
+  QObject::connect(rp, SIGNAL(drawingReady()), s, SLOT(updateScope()));
 
   central->resize(810,610);  central->show();
 

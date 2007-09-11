@@ -15,10 +15,11 @@ class Scope : public QWidget
  public:
   Scope();
   QImage *image;
+  bool ready;
 
  public slots:
   void saveScreen();
-  void update();
+  void updateScope();
   void setTimeDiv(double s);
 
  protected:

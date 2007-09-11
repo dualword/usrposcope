@@ -2,6 +2,8 @@
 using namespace std;
 #include <iostream>
 #include <QCheckBox>
+#include <QMutex>
+#include <QWaitCondition>
 
 #include <math.h>
 #include <unistd.h>
@@ -13,6 +15,8 @@ using namespace std;
 #define BUFSIZE 2 * 65536
 #define DIVSIZE 50
 
+extern QMutex mutex;
+extern QWaitCondition waitCond;
 
 static void
 print_stats(usrp_standard_rx *r)
@@ -44,8 +48,8 @@ USRPiface::USRPiface(Scope *s)
 
   state = STATE_NORMAL;
   max = 0.1;
-  showInphase = false;
-  showQuadrature = false;
+  showInphase = true;
+  showQuadrature = true;
   showIQ = false;
   showFFT = false;
   showFM = false;
@@ -143,7 +147,10 @@ USRPiface::run()
 	 if (drawPause)
 	   {
 	     drawPause = false;
-	     emit(drawingReady());
+             mutex.lock();
+             emit(drawingReady());
+             waitCond.wait(&mutex);	
+	     mutex.unlock();
 	   }
 	 usleep(200);
 	 continue;
@@ -318,7 +325,13 @@ USRPiface::run()
      p.end();
 
      if (state == STATE_NORMAL)
-       emit(drawingReady());
+	{
+          mutex.lock();
+          emit(drawingReady());
+          waitCond.wait(&mutex);	
+	  mutex.unlock();
+	}
+
    }
   rx->stop();
 }
